@@ -20,6 +20,17 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
   const currentSegmentTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const sessionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef<boolean>(true);
+  const hasInitializedRef = useRef<boolean>(false);
+  const onCompleteRef = useRef(onComplete);
+  const isRealUnmountRef = useRef<boolean>(false);
+  const currentRecordingIdRef = useRef<string | null>(null);
+  const recordingCountRef = useRef<number>(0);
+  const sessionEndedRef = useRef<boolean>(false);
+
+  // Update the ref when onComplete changes
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   const sendAudioToAPI = async (audioBlob: Blob, recordingNumber: number) => {
     try {
@@ -69,10 +80,10 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       );
       formData.append("timestamp", new Date().toISOString());
       formData.append("totalDuration", totalDuration.toString());
-      formData.append("segmentCount", recordingCount.toString());
+      formData.append("segmentCount", recordingCountRef.current.toString());
 
       console.log(
-        `Sending complete audio session - Duration: ${totalDuration}s, Segments: ${recordingCount}`,
+        `Sending complete audio session - Duration: ${totalDuration}s, Segments: ${recordingCountRef.current}`,
       );
 
       const response = await fetch("/api/full-audio-upload", {
@@ -100,13 +111,11 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
   };
 
   const startNewRecording = async () => {
-    if (!isMountedRef.current || isRecording) {
+    if (!isMountedRef.current || isRecording || sessionEndedRef.current) {
       return;
     }
 
     try {
-      console.log("Starting new recording segment...");
-
       if (!streamRef.current) {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -122,6 +131,10 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
         mimeType: "audio/webm",
       });
 
+      // Generate unique ID for this recording session
+      const recordingId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+      currentRecordingIdRef.current = recordingId;
+
       mediaRecorderRef.current = mediaRecorder;
       const audioChunks: Blob[] = [];
 
@@ -133,15 +146,22 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       };
 
       mediaRecorder.onstop = () => {
-        if (!isMountedRef.current) return;
+        // Check if this is still the current recording session
+        if (!isMountedRef.current || currentRecordingIdRef.current !== recordingId) {
+          return;
+        }
 
         const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
 
-        setRecordingCount((prevCount) => {
-          const newCount = prevCount + 1;
-          sendAudioToAPI(audioBlob, newCount);
-          return newCount;
-        });
+        // Increment and use ref to avoid React StrictMode double execution
+        recordingCountRef.current += 1;
+        const currentCount = recordingCountRef.current;
+        
+        // Update state for UI
+        setRecordingCount(currentCount);
+        
+        // Send API call outside of state setter to prevent double execution
+        sendAudioToAPI(audioBlob, currentCount);
 
         setIsRecording(false);
       };
@@ -160,12 +180,12 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       }
 
       currentSegmentTimeoutRef.current = setTimeout(() => {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && !sessionEndedRef.current) {
           stopCurrentRecording();
-
+          
           // Start next recording after a brief pause
           setTimeout(() => {
-            if (isMountedRef.current) {
+            if (isMountedRef.current && !sessionEndedRef.current) {
               startNewRecording();
             }
           }, 100);
@@ -178,14 +198,26 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
     }
   };
 
-  const cleanup = () => {
-    isMountedRef.current = false;
+  const cleanup = (isRealCleanup = false) => {
+    console.log(`[DEBUG] cleanup called - isRealCleanup: ${isRealCleanup}, sessionTimeout exists: ${!!sessionTimeoutRef.current}`);
+    
+    // Only mark session as ended if this is a real cleanup (session timeout or unmount)
+    if (isRealCleanup) {
+      sessionEndedRef.current = true;
+    }
+    
+    // Invalidate current recording session
+    currentRecordingIdRef.current = null;
+    
+    // Don't set isMountedRef to false here - let it be controlled by actual unmount
+    // isMountedRef.current = false;
 
     if (currentSegmentTimeoutRef.current) {
       clearTimeout(currentSegmentTimeoutRef.current);
     }
 
-    if (sessionTimeoutRef.current) {
+    // Only clear session timeout if this is a real cleanup (not React dev mode)
+    if (isRealCleanup && sessionTimeoutRef.current) {
       clearTimeout(sessionTimeoutRef.current);
     }
 
@@ -201,26 +233,55 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
   };
 
   useEffect(() => {
+    // Prevent double initialization in development mode
+    if (hasInitializedRef.current) {
+      return;
+    }
+    
+    hasInitializedRef.current = true;
     isMountedRef.current = true;
     sessionStartTimeRef.current = Date.now();
     allAudioChunksRef.current = [];
     setRecordingCount(0);
+    recordingCountRef.current = 0;
+    sessionEndedRef.current = false;
 
     // Start first recording
     startNewRecording();
 
     // Set session timeout for 25 seconds
+    console.log("Setting 25-second session timeout...");
     sessionTimeoutRef.current = setTimeout(async () => {
       if (!isMountedRef.current) return;
 
       console.log("Session timeout reached, ending recording...");
-      cleanup();
+      console.log(`[DEBUG] Session stats - Total segments: ${recordingCountRef.current}, Session duration: ${Math.round((Date.now() - sessionStartTimeRef.current) / 1000)}s`);
+      
+      // First, stop all recording activity with real cleanup flag
+      cleanup(true);
+      
+      // Then send the full audio and complete
       await sendFullAudioToAPI();
-      await onComplete();
+      await onCompleteRef.current();
     }, 25000);
 
-    return cleanup;
-  }, [onComplete]);
+    return () => cleanup(false);
+  }, []); // Remove onComplete from dependency array
+
+  // Separate effect to handle actual component unmount
+  useEffect(() => {
+    // Reset the mounted flag in case React dev mode set it to false
+    isMountedRef.current = true;
+    
+    return () => {
+      // In production, this will be a real unmount
+      // In development, React may call this during StrictMode double-invocation
+      if (process.env.NODE_ENV === 'production') {
+        isMountedRef.current = false;
+        cleanup(true); // This is a real unmount in production
+      }
+    };
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-merah/10">
