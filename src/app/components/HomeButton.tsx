@@ -42,8 +42,8 @@ export default function Home() {
       </div>
 
       {/* Foot Section */}
-      <div className="flex w-full items-center justify-between">
-        <div className="flex items-center justify-center gap-2">
+      <div className="flex w-full flex-col items-center justify-between gap-4 rounded-lg bg-white px-4 py-4 shadow-md md:flex-row">
+        <div className="flex flex-col items-center justify-center gap-2 md:flex-row">
           <p className="text-sm font-bold">
             @Go
             <span className="text-[#00AA13]">Shield</span>

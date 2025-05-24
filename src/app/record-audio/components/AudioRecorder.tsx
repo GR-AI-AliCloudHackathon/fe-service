@@ -7,7 +7,7 @@ import { TiMediaRecord } from "react-icons/ti";
 import toWav from "audiobuffer-to-wav";
 
 type AudioRecorderProps = {
-  onComplete: () => Promise<void>;
+  onComplete?: () => Promise<void>;
 };
 
 export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
@@ -300,7 +300,12 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
 
       // Then send the full audio and complete
       await sendFullAudioToAPI();
-      await onCompleteRef.current();
+      if (onCompleteRef.current) {
+        await onCompleteRef.current();
+      } else {
+        // Default behavior: navigate to issue-created page
+        router.push("/issue-created");
+      }
     }, 25000);
 
     return () => cleanup(false);
