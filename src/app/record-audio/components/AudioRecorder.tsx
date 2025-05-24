@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IoIosLock } from "react-icons/io";
 import toast from "react-hot-toast";
+import { TiMediaRecord } from "react-icons/ti";
 
 type AudioRecorderProps = {
   onComplete: () => Promise<void>;
@@ -132,7 +133,8 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       });
 
       // Generate unique ID for this recording session
-      const recordingId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+      const recordingId =
+        Date.now().toString() + Math.random().toString(36).substr(2, 9);
       currentRecordingIdRef.current = recordingId;
 
       mediaRecorderRef.current = mediaRecorder;
@@ -147,7 +149,10 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
 
       mediaRecorder.onstop = () => {
         // Check if this is still the current recording session
-        if (!isMountedRef.current || currentRecordingIdRef.current !== recordingId) {
+        if (
+          !isMountedRef.current ||
+          currentRecordingIdRef.current !== recordingId
+        ) {
           return;
         }
 
@@ -156,10 +161,10 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
         // Increment and use ref to avoid React StrictMode double execution
         recordingCountRef.current += 1;
         const currentCount = recordingCountRef.current;
-        
+
         // Update state for UI
         setRecordingCount(currentCount);
-        
+
         // Send API call outside of state setter to prevent double execution
         sendAudioToAPI(audioBlob, currentCount);
 
@@ -182,7 +187,7 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       currentSegmentTimeoutRef.current = setTimeout(() => {
         if (isMountedRef.current && !sessionEndedRef.current) {
           stopCurrentRecording();
-          
+
           // Start next recording after a brief pause
           setTimeout(() => {
             if (isMountedRef.current && !sessionEndedRef.current) {
@@ -199,16 +204,18 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
   };
 
   const cleanup = (isRealCleanup = false) => {
-    console.log(`[DEBUG] cleanup called - isRealCleanup: ${isRealCleanup}, sessionTimeout exists: ${!!sessionTimeoutRef.current}`);
-    
+    console.log(
+      `[DEBUG] cleanup called - isRealCleanup: ${isRealCleanup}, sessionTimeout exists: ${!!sessionTimeoutRef.current}`,
+    );
+
     // Only mark session as ended if this is a real cleanup (session timeout or unmount)
     if (isRealCleanup) {
       sessionEndedRef.current = true;
     }
-    
+
     // Invalidate current recording session
     currentRecordingIdRef.current = null;
-    
+
     // Don't set isMountedRef to false here - let it be controlled by actual unmount
     // isMountedRef.current = false;
 
@@ -237,7 +244,7 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
     if (hasInitializedRef.current) {
       return;
     }
-    
+
     hasInitializedRef.current = true;
     isMountedRef.current = true;
     sessionStartTimeRef.current = Date.now();
@@ -255,11 +262,13 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       if (!isMountedRef.current) return;
 
       console.log("Session timeout reached, ending recording...");
-      console.log(`[DEBUG] Session stats - Total segments: ${recordingCountRef.current}, Session duration: ${Math.round((Date.now() - sessionStartTimeRef.current) / 1000)}s`);
-      
+      console.log(
+        `[DEBUG] Session stats - Total segments: ${recordingCountRef.current}, Session duration: ${Math.round((Date.now() - sessionStartTimeRef.current) / 1000)}s`,
+      );
+
       // First, stop all recording activity with real cleanup flag
       cleanup(true);
-      
+
       // Then send the full audio and complete
       await sendFullAudioToAPI();
       await onCompleteRef.current();
@@ -272,11 +281,11 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
   useEffect(() => {
     // Reset the mounted flag in case React dev mode set it to false
     isMountedRef.current = true;
-    
+
     return () => {
       // In production, this will be a real unmount
       // In development, React may call this during StrictMode double-invocation
-      if (process.env.NODE_ENV === 'production') {
+      if (process.env.NODE_ENV === "production") {
         isMountedRef.current = false;
         cleanup(true); // This is a real unmount in production
       }
@@ -288,7 +297,7 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       <div className="relative mt-4 flex aspect-square w-80 items-center justify-center self-center overflow-hidden rounded-full bg-merah/50 shadow-2xl shadow-merah">
         <div className="flex aspect-square w-64 items-center justify-center self-center rounded-full bg-merah/30 shadow-lg shadow-merah">
           <div className="flex aspect-square w-48 items-center justify-center self-center rounded-full bg-merah/60 shadow-lg shadow-merah">
-            <IoIosLock className="text-6xl text-white" />
+            <TiMediaRecord className="text-6xl text-white" />
           </div>
         </div>
         <div className="flex items-center justify-center">
@@ -299,8 +308,10 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       </div>
 
       <div className="mt-14 flex flex-col gap-2">
-        <h1 className="text-center text-4xl font-semibold">Danger Detected</h1>
-        <p className="text-center">{"We'll be here until you're safe"}</p>
+        <h1 className="text-center text-4xl font-semibold">Recording Audio</h1>
+        <p className="text-center">
+          {"We'll record what's happening around you"}
+        </p>
       </div>
 
       <div className="mt-8 flex flex-col items-center gap-2">
