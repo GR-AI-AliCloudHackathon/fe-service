@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.bg-battery {
+  background: linear-gradient(
+    150deg,
+    #01f2cf 13.82%,
+    #03da9a 64.15%,
+    #03b3da 126.15%
+  );
+}
+
+@keyframes expand {
+  0% {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.animate-expand {
+  animation: expand 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animation-delay-1 {
+  animation-delay: 0.5s;
+}
+
+.animation-delay-2 {
+  animation-delay: 2s;
+}
