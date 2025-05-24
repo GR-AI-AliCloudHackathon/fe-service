@@ -13,15 +13,15 @@ export default function PostCarePage() {
       <div className="flex flex-col gap-2">
         <p className="font-bold">Our Post-Incident Care includes :</p>
         <div className="flex flex-col gap-4 text-black">
-          <div className="flex rounded-full bg-white p-2">
+          <div className="flex w-fit rounded-full bg-white p-2">
             <p>🎧 Instant Access ride audio & visual logs</p>
           </div>
 
-          <div className="flex rounded-full bg-white p-2">
+          <div className="flex w-fit rounded-full bg-white p-2">
             <p>🤝 Report easily, without retraumatization</p>
           </div>
 
-          <div className="flex rounded-full bg-white p-2">
+          <div className="flex w-fit rounded-full bg-white p-2">
             <p>🛡️ Get help filing claims & accessing care</p>
           </div>
         </div>
