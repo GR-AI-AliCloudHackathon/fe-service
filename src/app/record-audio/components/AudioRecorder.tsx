@@ -17,9 +17,9 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
   const streamRef = useRef<MediaStream | null>(null);
   const allAudioChunksRef = useRef<Blob[]>([]);
   const sessionStartTimeRef = useRef<number>(Date.now());
-  const isMountedRef = useRef<boolean>(true);
-  const currentRecordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const currentSegmentTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const sessionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isMountedRef = useRef<boolean>(true);
 
   const sendAudioToAPI = async (audioBlob: Blob, recordingNumber: number) => {
     try {
@@ -93,19 +93,19 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
     }
   };
 
-  const startRecording = async () => {
-    try {
-      if (
-        isRecording ||
-        isStartingRecordingRef.current ||
-        !isMountedRef.current
-      ) {
-        return;
-      }
+  const stopCurrentRecording = () => {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  };
 
+  const startNewRecording = async () => {
+    if (!isMountedRef.current || isRecording) {
+      return;
+    }
+
+    try {
       console.log("Starting new recording segment...");
-      isStartingRecordingRef.current = true;
-      isProcessingSegmentRef.current = false;
 
       if (!streamRef.current) {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -133,11 +133,7 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       };
 
       mediaRecorder.onstop = () => {
-        if (isProcessingSegmentRef.current || !isMountedRef.current) {
-          return;
-        }
-
-        isProcessingSegmentRef.current = true;
+        if (!isMountedRef.current) return;
 
         const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
 
@@ -148,124 +144,80 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
         });
 
         setIsRecording(false);
-
-        // Reset processing flag after a short delay
-        setTimeout(() => {
-          isProcessingSegmentRef.current = false;
-        }, 100);
       };
 
       mediaRecorder.onerror = (event) => {
         console.error("MediaRecorder error:", event);
         setIsRecording(false);
-        isProcessingSegmentRef.current = false;
       };
 
       mediaRecorder.start();
       setIsRecording(true);
+
+      // Schedule stop after 10 seconds
+      if (currentSegmentTimeoutRef.current) {
+        clearTimeout(currentSegmentTimeoutRef.current);
+      }
+
+      currentSegmentTimeoutRef.current = setTimeout(() => {
+        if (isMountedRef.current) {
+          stopCurrentRecording();
+
+          // Start next recording after a brief pause
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              startNewRecording();
+            }
+          }, 100);
+        }
+      }, 10000);
     } catch (error) {
       console.error("Error accessing microphone:", error);
       toast.error("Unable to access microphone. Please check permissions.");
       setIsRecording(false);
-      isProcessingSegmentRef.current = false;
-    } finally {
-      isStartingRecordingRef.current = false;
     }
   };
 
-  const stopRecording = () => {
+  const cleanup = () => {
+    isMountedRef.current = false;
+
+    if (currentSegmentTimeoutRef.current) {
+      clearTimeout(currentSegmentTimeoutRef.current);
+    }
+
+    if (sessionTimeoutRef.current) {
+      clearTimeout(sessionTimeoutRef.current);
+    }
+
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
-    setIsRecording(false);
-  };
 
-  const cleanupResources = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    if (recordingCycleRef.current) {
-      clearTimeout(recordingCycleRef.current);
-      recordingCycleRef.current = null;
-    }
-  };
-
-  const startRecordingCycle = async () => {
-    if (
-      !isMountedRef.current ||
-      isProcessingSegmentRef.current ||
-      isStartingRecordingRef.current
-    ) {
-      return;
     }
 
-    await startRecording();
-
-    // Clear any existing timeout
-    if (recordingCycleRef.current) {
-      clearTimeout(recordingCycleRef.current);
-    }
-
-    // Schedule the next cycle
-    recordingCycleRef.current = setTimeout(() => {
-      if (!isMountedRef.current) {
-        return;
-      }
-
-      // Stop current recording
-      if (mediaRecorderRef.current?.state === "recording") {
-        mediaRecorderRef.current.stop();
-      }
-
-      // Wait a bit before starting next recording
-      setTimeout(() => {
-        if (isMountedRef.current) {
-          startRecordingCycle();
-        }
-      }, 100);
-    }, 10000); // 10 second intervals
+    setIsRecording(false);
   };
 
   useEffect(() => {
     isMountedRef.current = true;
-    let redirectTimeout: NodeJS.Timeout;
+    sessionStartTimeRef.current = Date.now();
+    allAudioChunksRef.current = [];
+    setRecordingCount(0);
 
-    const cleanup = () => {
-      isMountedRef.current = false;
-      stopRecording();
-      cleanupResources();
-      clearTimeout(redirectTimeout);
-    };
+    // Start first recording
+    startNewRecording();
 
-    const startSession = async () => {
-      sessionStartTimeRef.current = Date.now();
-      allAudioChunksRef.current = [];
-      setRecordingCount(0);
-      isProcessingSegmentRef.current = false;
-      isStartingRecordingRef.current = false;
-      isSendingFullAudioRef.current = false;
+    // Set session timeout for 25 seconds
+    sessionTimeoutRef.current = setTimeout(async () => {
+      if (!isMountedRef.current) return;
 
-      try {
-        // Start the recording cycle
-        await startRecordingCycle();
-
-        // Set timeout for session end (25 seconds)
-        redirectTimeout = setTimeout(async () => {
-          if (!isMountedRef.current) return;
-
-          console.log("Session timeout reached, ending recording...");
-          cleanup();
-          await sendFullAudioToAPI();
-          await onComplete();
-        }, 25000);
-      } catch (error) {
-        console.error("Error in recording session:", error);
-        cleanup();
-      }
-    };
-
-    startSession();
+      console.log("Session timeout reached, ending recording...");
+      cleanup();
+      await sendFullAudioToAPI();
+      await onComplete();
+    }, 25000);
 
     return cleanup;
   }, [onComplete]);
