@@ -29,7 +29,7 @@ function Danger({ setSafe }: SafeProps) {
   }, [router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-ijo-muda/50">
+    <div className="flex min-h-screen items-center justify-center bg-ijo-muda">
       <div
         onClick={() => setSafe(true)}
         className="relative mt-4 flex aspect-square w-80 items-center justify-center self-center overflow-hidden rounded-full bg-white shadow-2xl shadow-ijo-muda"
