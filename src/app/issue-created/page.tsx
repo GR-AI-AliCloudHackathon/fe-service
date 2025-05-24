@@ -100,7 +100,7 @@ function IssueCreated() {
   const router = useRouter();
 
   const handleRedirect = () => {
-    router.push("/");
+    router.push("/issue-created/post-care");
   };
 
   // Dummy report data
