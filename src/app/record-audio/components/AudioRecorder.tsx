@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IoIosLock } from "react-icons/io";
 import toast from "react-hot-toast";
 import { TiMediaRecord } from "react-icons/ti";
+import toWav from "audiobuffer-to-wav";
 
 type AudioRecorderProps = {
   onComplete: () => Promise<void>;
@@ -33,10 +33,36 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
 
+  const convertToWav = async (audioBlob: Blob): Promise<Blob> => {
+    try {
+      // Convert blob to array buffer
+      const arrayBuffer = await audioBlob.arrayBuffer();
+
+      // Decode audio data
+      const audioContext = new (window.AudioContext ||
+        (window as any).webkitAudioContext)();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      // Convert to WAV
+      const wavArrayBuffer = toWav(audioBuffer);
+
+      // Create WAV blob
+      const wavBlob = new Blob([wavArrayBuffer], { type: "audio/wav" });
+
+      return wavBlob;
+    } catch (error) {
+      console.error("Error converting audio to WAV:", error);
+      throw error;
+    }
+  };
+
   const sendAudioToAPI = async (audioBlob: Blob, recordingNumber: number) => {
     try {
+      // Convert to WAV format
+      const wavBlob = await convertToWav(audioBlob);
+
       const formData = new FormData();
-      formData.append("audio", audioBlob, `recording_${recordingNumber}.webm`);
+      formData.append("audio", wavBlob, `recording_${recordingNumber}.wav`);
       formData.append("timestamp", new Date().toISOString());
       formData.append("recordingNumber", recordingNumber.toString());
 
@@ -69,6 +95,9 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
         type: "audio/webm",
       });
 
+      // Convert to WAV format
+      const wavBlob = await convertToWav(fullAudioBlob);
+
       const totalDuration = Math.round(
         (Date.now() - sessionStartTimeRef.current) / 1000,
       );
@@ -76,8 +105,8 @@ export default function AudioRecorder({ onComplete }: AudioRecorderProps) {
       const formData = new FormData();
       formData.append(
         "audio",
-        fullAudioBlob,
-        `full_session_${sessionStartTimeRef.current}.webm`,
+        wavBlob,
+        `full_session_${sessionStartTimeRef.current}.wav`,
       );
       formData.append("timestamp", new Date().toISOString());
       formData.append("totalDuration", totalDuration.toString());
