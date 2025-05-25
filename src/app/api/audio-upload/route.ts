@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getApiUrl } from "@/lib/api-config";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +15,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Log the received data (in a real implementation, you'd save this to storage/database)
     console.log("Received audio upload:", {
       filename: audioFile.name,
       size: audioFile.size,
@@ -23,29 +23,81 @@ export async function POST(request: NextRequest) {
       recordingNumber,
     });
 
-    // Simulate processing time
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Create a new FormData to send to the backend
+    const backendFormData = new FormData();
+    backendFormData.append("audio_file", audioFile);
+    
+    // Add any available metadata that might help with risk assessment
+    // These could be replaced with actual values if available in your app
+    backendFormData.append("driver_id", "unknown");
+    backendFormData.append("location_lat", "0");
+    backendFormData.append("location_lng", "0");
+    backendFormData.append("route_expected", "unknown");
 
-    // In a real implementation, you would:
-    // 1. Save the audio file to cloud storage (AWS S3, Google Cloud Storage, etc.)
-    // 2. Store metadata in a database
-    // 3. Process the audio (transcription, analysis, etc.)
-    // 4. Send notifications if needed
+    try {
+      // Send the audio to the Python backend for assessment
+      const backendResponse = await fetch(getApiUrl("/api/assessment"), {
+        method: "POST",
+        body: backendFormData,
+      });
 
-    return NextResponse.json({
-      success: true,
-      message: "Audio uploaded successfully",
-      data: {
-        recordingNumber,
-        timestamp,
-        fileSize: audioFile.size,
-        processedAt: new Date().toISOString(),
-      },
-    });
+      if (!backendResponse.ok) {
+        console.error("Backend API error:", await backendResponse.text());
+        throw new Error(`Backend API error: ${backendResponse.status}`);
+      }
+
+      const assessmentResult = await backendResponse.json();
+      
+      console.log("Risk assessment result:", assessmentResult);
+  
+      return NextResponse.json({
+        success: true,
+        message: "Audio uploaded and processed successfully",
+        data: {
+          recordingNumber,
+          timestamp,
+          fileSize: audioFile.size,
+          processedAt: new Date().toISOString(),
+          assessment: assessmentResult,  // Already in the correct format from Python backend
+        },
+      });
+    } catch (apiError: any) {
+      console.error("Backend API error:", apiError);
+      
+      // Return a graceful degraded response when backend is unavailable
+      // This allows the frontend to continue functioning without the backend
+      if (apiError.message.includes("Failed to fetch") || apiError.message.includes("NetworkError")) {
+        console.warn("Backend connection failed - returning degraded response");
+        return NextResponse.json({
+          success: true,
+          backendConnected: false,
+          message: "Audio recorded but backend processing unavailable",
+          data: {
+            recordingNumber,
+            timestamp,
+            fileSize: audioFile.size,
+            processedAt: new Date().toISOString(),
+            assessment: {
+              risk_level: "UNKNOWN",
+              risk_score: 0,
+              transcribed_text: "[Backend connection error - transcription unavailable]",
+              action_required: false,
+              threat_text_score: 0,
+              location_risk_index: 0,
+              driver_history_score: 0,
+              push_notification: null
+            }
+          }
+        });
+      }
+      
+      // For other errors, pass through to client
+      throw apiError;
+    }
   } catch (error) {
     console.error("Error processing audio upload:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Internal server error", message: (error as Error).message },
       { status: 500 },
     );
   }

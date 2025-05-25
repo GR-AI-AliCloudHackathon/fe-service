@@ -9,6 +9,11 @@ const config = {
   images: {
     unoptimized: true,
   },
+  env: {
+    NEXT_PUBLIC_BACKEND_API_URL: process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000',
+    NEXT_PUBLIC_LOW_RISK_THRESHOLD: process.env.NEXT_PUBLIC_LOW_RISK_THRESHOLD || '39',
+    NEXT_PUBLIC_MEDIUM_RISK_THRESHOLD: process.env.NEXT_PUBLIC_MEDIUM_RISK_THRESHOLD || '69'
+  },
 };
 
 export default config;

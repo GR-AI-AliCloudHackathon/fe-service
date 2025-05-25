@@ -1,11 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { CgProfile } from "react-icons/cg";
 import { LuPencil } from "react-icons/lu";
-import { FaCheck } from "react-icons/fa";
+import { FaCheck, FaFileAlt } from "react-icons/fa";
 import Image from "next/image";
 import Link from "next/link";
+import { EvidenceKit } from "@/types/assessment";
 
 export default function VerifyTruePage() {
   return <FlowControl />;
@@ -15,41 +16,88 @@ function FlowControl() {
   const [step, setStep] = useState<
     "issue-confirm" | "creating-issue" | "issue-created"
   >("issue-confirm");
+  const [evidenceKit, setEvidenceKit] = useState<EvidenceKit | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    // Check for evidence kit data from sessionStorage
+    const storedEvidenceKit = sessionStorage.getItem('evidenceKit');
+    if (storedEvidenceKit) {
+      try {
+        const parsedEvidenceKit = JSON.parse(storedEvidenceKit);
+        setEvidenceKit(parsedEvidenceKit);
+      } catch (error) {
+        console.error('Error parsing evidence kit from sessionStorage:', error);
+      }
+    }
+  }, []);
 
   const handleIssueConfirmationResponse = (needsShelter: boolean) => {
     if (needsShelter) {
       setStep("creating-issue");
       setTimeout(() => setStep("issue-created"), 3000);
     } else {
+      // User says they're okay - clear evidence kit data and return to recording
+      sessionStorage.removeItem('evidenceKit');
       router.push("/record-audio");
+    }
+  };
+
+  const handleViewEvidenceKit = () => {
+    if (evidenceKit) {
+      // Use encodeURIComponent to safely encode Unicode characters
+      const encodedData = encodeURIComponent(JSON.stringify(evidenceKit));
+      router.push(`/evidence-kit?data=${encodedData}`);
     }
   };
 
   return (
     <>
       {step === "issue-confirm" && (
-        <IssueConfirmation onRespond={handleIssueConfirmationResponse} />
+        <IssueConfirmation 
+          onRespond={handleIssueConfirmationResponse} 
+          evidenceKit={evidenceKit}
+          onViewEvidenceKit={handleViewEvidenceKit}
+        />
       )}
       {step === "creating-issue" && <CreatingIssue />}
-      {step === "issue-created" && <IssueCreated />}
+      {step === "issue-created" && <IssueCreated evidenceKit={evidenceKit} onViewEvidenceKit={handleViewEvidenceKit} />}
     </>
   );
 }
 
 interface IssueConfirmationProps {
   onRespond: (needsShelter: boolean) => void;
+  evidenceKit: EvidenceKit | null;
+  onViewEvidenceKit: () => void;
 }
 
-function IssueConfirmation({ onRespond }: IssueConfirmationProps) {
+function IssueConfirmation({ onRespond, evidenceKit, onViewEvidenceKit }: IssueConfirmationProps) {
+  // Get risk level from evidence kit or fallback to default
+  const riskLevel = evidenceKit?.incident_classification?.severity_level || 'Medium';
+  const riskColor = riskLevel === 'High' ? 'text-red-500' : 
+                   riskLevel === 'Medium' ? 'text-orange-500' : 'text-yellow-500';
+
   return (
     <div className="flex min-h-screen items-end bg-[url('/goshield/map.png')] bg-cover bg-no-repeat">
       <div className="flex w-full flex-col gap-4 bg-gradient-to-b from-transparent to-white px-[5%] py-16 text-center">
         <h1 className="text-2xl font-bold">
-          Based on our risk assestment, we found that your risk is at{" "}
-          <span className="text-red-500">Hi/Medium</span>
+          Based on our risk assessment, we found that your risk is at{" "}
+          <span className={riskColor}>{riskLevel}</span>
         </h1>
         <p>{"Do you want to raise an issue to our system?"}</p>
+
+        {evidenceKit && (
+          <div className="mt-4">
+            <button
+              onClick={onViewEvidenceKit}
+              className="flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-white hover:bg-blue-600"
+            >
+              <FaFileAlt />
+              View Detailed Evidence Kit
+            </button>
+          </div>
+        )}
 
         <div className="mt-8 flex justify-center gap-4">
           <button
@@ -96,15 +144,29 @@ function CreatingIssue() {
   );
 }
 
-function IssueCreated() {
+interface IssueCreatedProps {
+  evidenceKit: EvidenceKit | null;
+  onViewEvidenceKit: () => void;
+}
+
+function IssueCreated({ evidenceKit, onViewEvidenceKit }: IssueCreatedProps) {
   const router = useRouter();
 
   const handleRedirect = () => {
     router.push("/issue-created/post-care");
   };
 
-  // Dummy report data
-  const reportDetail = {
+  // Use evidence kit data if available, otherwise use dummy data
+  const reportDetail = evidenceKit ? {
+    title: evidenceKit.incident_classification.primary_category || "Emergency Issue Report",
+    status: "In Review" as const,
+    whatHappened: evidenceKit.executive_summary || "Based on the audio recording analysis, we detected potential danger.",
+    location: evidenceKit.ride_details.additional_context || "Location from ride details",
+    date: new Date(evidenceKit.processing_timestamp).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+    time: new Date(evidenceKit.processing_timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+    witness: "There were some people nearby who might have witnessed the situation.",
+    reportStatus: "Currently being processed by emergency response team",
+  } : {
     title: "Emergency Issue Report",
     status: "In Review" as const,
     whatHappened:
@@ -158,6 +220,19 @@ function IssueCreated() {
               </p>
             </div>
           </div>
+
+          {/* Evidence Kit button if available */}
+          {evidenceKit && (
+            <div className="mt-4 border-t pt-4">
+              <button
+                onClick={onViewEvidenceKit}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-white hover:bg-blue-600"
+              >
+                <FaFileAlt />
+                View Evidence Kit Details
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
